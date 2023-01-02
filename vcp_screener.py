@@ -2,11 +2,10 @@
 """
 This module could be run in Quantconnect Lean Engine for backtesting.
 
-It is a simple VCP screener for US equities.
+It is a stock screener for US equities based on VCP strategy.
 
 @author: mickeylau
 """
-
 from AlgorithmImports import *
 from System.Collections.Generic import List
 from datetime import datetime
@@ -20,15 +19,16 @@ class VCP2(QCAlgorithm):
         '''Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.'''
 
         self.SetStartDate(2018,1,1)  #Set Start Date
-        self.SetEndDate(2022,10,1)    #Set End Date
+        self.SetEndDate(2022,12,31)    #Set End Date
         self.SetCash(100000)           #Set Strategy Cash
-        
+        self.SetWarmUp(400, Resolution.Daily)
+
+
         self.UniverseSettings.Resolution = Resolution.Daily
-        self.UniverseSettings.Leverage = 1.2 #allow some leverage due to limitation of resolution
+        self.UniverseSettings.Leverage = 1.5 #allow some leverage due to limitation of resolution
 
         self.coarse_count = 10 #initial number of stocks
-        self.extra_space=0 #number of stocks to be filled in if stop loss triggered
-        self.sec_count = self.coarse_count
+
         self.SetExecution(ImmediateExecutionModel())
         self.SetRiskManagement(NullRiskManagementModel())
         self.averages = { }
@@ -38,12 +38,10 @@ class VCP2(QCAlgorithm):
         self.AddUniverse(self.CoarseSelectionFunction)
 
   
-
-
     # screen data and take the top 'NumberOfSymbols'
     def CoarseSelectionFunction(self, coarse):
 
-        self.filtered_by_price = [x for x in coarse if x.Price>12 and x.DollarVolume>200000 and x.HasFundamentalData]
+        self.filtered_by_price = [x for x in coarse if x.Price>15 and x.DollarVolume>500000 and x.HasFundamentalData]
 
         # use a dictionary to refer the object that will keep the moving averages
         for cf in self.filtered_by_price:
@@ -66,8 +64,7 @@ class VCP2(QCAlgorithm):
             self.Log('symbol: ' + str(x.symbol.Value) + '  scale: ' + str(x.scale))
 
         # we need to return only the symbol objects
-        self.sec_count=self.coarse_count + self.extra_space
-        return [ x.symbol for x in values[:self.sec_count]]
+        return [ x.symbol for x in values[:self.coarse_count]]
 
     # this event fires whenever we have changes to our universe
     def OnSecuritiesChanged(self, changes):
@@ -76,27 +73,10 @@ class VCP2(QCAlgorithm):
             if security.Invested:
                 self.Liquidate(security.Symbol)
 
-        # we want 10% of in each security added
-
-        self.added_count=0
-        for stock in changes.AddedSecurities:
-            self.added_count += 1   
-
+        # we want 10% invested in each security selected
         for security in changes.AddedSecurities:
-            if self.added_count < self.sec_count:
-                self.SetHoldings(security.Symbol, 1/(self.sec_count - self.added_count))
-            else:
-                self.SetHoldings(security.Symbol, 0.1)
+                self.SetHoldings(security.Symbol, 0.1) 
 
-            if self.extra_space > 0:
-                self.extra_space -=1
-
-    #stop loss
-    def OnData(self, data):
-        for sec in self.Portfolio.Keys:
-            if self.Portfolio[sec].UnrealizedProfitPercent < -0.02:
-                self.Liquidate(sec)
-                self.extra_space +=1
 
 
 class SymbolData(object):
@@ -161,4 +141,3 @@ class SymbolData(object):
 
         if self.is_uptrend:
             self.scale = self.slope
-
